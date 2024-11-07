@@ -1,0 +1,38 @@
+[tool.poetry]
+name = "ult"
+version = "0.0.1"
+description = "Unified Lookup Tables"
+authors = ["AI4SD team"]
+readme = "README.md"
+license = "MIT"
+packages = [{include = "ult", from="src"}]
+include = ["ult/py.typed"]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+datasets = "^3.1.0"
+loguru = "^0.7.2"
+numpy = "^2.1.3"
+pandas = "^2.2.3"
+pydantic = "^2.9.2"
+rdkit = "^2024.3.5"
+transformers = "^4.46.2"
+
+[tool.mypy]
+check_untyped_defs = true
+strict = true
+plugins = [
+    "pydantic.mypy"
+]
+
+[[tool.mypy.overrides]]
+module = [
+    "datasets.*",
+    "pandas.*",
+    "rdkit.*"
+]
+ignore_missing_imports = true
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

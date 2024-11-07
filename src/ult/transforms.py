@@ -1,0 +1,517 @@
+"""Unicode transforms."""
+
+import bisect
+import json
+import multiprocessing as mp
+from abc import ABC, abstractmethod
+from collections import OrderedDict
+from copy import deepcopy
+from difflib import SequenceMatcher
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Type, cast
+
+import numpy as np
+from loguru import logger
+
+
+from .configuration import (
+    Occurrences,
+    UnicodeTextBWRLETransformParameters,
+    UnicodeTransformParameters,
+)
+
+LAST_UNICODE_POINT = 2**24
+LAST_UNICODE_CHAR = chr(1114111)  # safe option for some cases chr(149000)
+OccurrenceType = float | int | str
+OccurrencesSequenceType = List[List[OccurrenceType]]
+
+
+class UnicodeDataTransform(ABC):
+    """Class that implements the unicode transform as a compression method."""
+
+    def __init__(
+        self, configuration: UnicodeTransformParameters = UnicodeTransformParameters()
+    ):
+        """Creates a unicode data transform.
+
+        Args:
+            patch_size: patch size for instance compression algorithm. Default to 16.
+            offset_value: initial unicode character offset to use for pattern occurrences.
+            compression_parameters: optional compression parameters.
+        """
+        # initialize private attributes
+        self._lut: OrderedDict[OccurrenceType, str] = OrderedDict()
+        self._lut_key_list: List[OccurrenceType] = list(self._lut.keys())
+        self._inverse_lut: Dict[str, OccurrenceType] = dict()
+        self._occurrences: OrderedDict[OccurrenceType, int] = OrderedDict()
+        # store parameters for compression
+        self.patch_size = configuration.patch_size
+        self.offset_value = configuration.offset_value
+        self.compression_method = configuration.compression_method
+        self.default_separator = configuration.default_separator
+        # if the configuration contains a path to occurrences, they are loaded and set
+        if configuration.occurrences_path is not None:
+            with configuration.occurrences_path.open("rt") as fp:
+                # keys in json are strings, occurrences objects might not
+                occurrences_json = json.load(fp)
+                occurrences_object = Occurrences(**occurrences_json)
+                # cast function for keys str -> occurrence type
+                cast_key = eval(occurrences_object.key_type)
+                # occurrences keys are occurrence type not str
+                occurrences = OrderedDict(
+                    {
+                        cast_key(key): value
+                        for key, value in occurrences_object.mapping.items()
+                    }
+                )
+                self.occurrences = occurrences
+
+    @property
+    def occurrences(self) -> OrderedDict[OccurrenceType, int]:
+        """Occurrences counts getter.
+
+        Returns:
+            occurrences counts.
+        """
+        return self._occurrences
+
+    @occurrences.setter
+    def occurrences(self, occurrences: OrderedDict[OccurrenceType, int]) -> None:
+        """Occurrences setter.
+
+        This ensure look-up tables are rebuilt.
+
+        Args:
+            occurrences: occurrences object.
+        """
+        # we make sure occurrences are sorted from most to least frequent ones.
+        self._occurrences = OrderedDict(
+            [
+                (occurrence, count)
+                for occurrence, count in sorted(
+                    occurrences.items(), key=lambda item: item[1], reverse=True
+                )
+            ]
+        )
+        # build look-up table
+        self._lut = OrderedDict()
+        for index, key in enumerate(self._occurrences.keys()):
+            if (index + self.offset_value) <= LAST_UNICODE_POINT:
+                unicode_char = chr(index + self.offset_value)
+            else:
+                unicode_char = chr(LAST_UNICODE_POINT)
+
+            self._lut[key] = unicode_char.encode("utf-8", errors="replace").decode(
+                "utf-8"
+            )
+        # re-sort LUT and store keys for fast look-ups
+        self._lut = OrderedDict(
+            [
+                (key, value)
+                for key, value in sorted(self._lut.items(), key=lambda item: item[0])
+            ]
+        )
+        self._lut_key_list = list(self._lut.keys())
+        # build inverse look-up table
+        self._inverse_lut = {
+            string_representation: occurrence
+            for occurrence, string_representation in self._lut.items()
+        }
+        self._inverse_lut[LAST_UNICODE_CHAR] = self._lut[next(reversed(self._lut))]
+
+    def save_occurrences(self, filepath: Path) -> None:
+        """Save occurrences to disk.
+
+        Args:
+            filepath: path where to save occurrences.
+        """
+        with filepath.open("wt") as fp:
+            if isinstance(list(self._occurrences.keys())[0], str):
+                key_type = "str"
+            elif isinstance(list(self._occurrences.keys())[0], int) or isinstance(
+                list(self._occurrences.keys())[0], np.integer
+            ):
+                key_type = "int"
+            elif isinstance(list(self._occurrences.keys())[0], float) or isinstance(
+                list(self._occurrences.keys())[0], np.floating
+            ):
+                key_type = "float"
+            else:
+                key_type = "str"
+            mapping = dict(
+                [(str(key), value) for key, value in self._occurrences.items()]
+            )
+
+            occurrences_object = Occurrences(mapping=mapping, key_type=key_type)
+            json.dump(occurrences_object.model_dump(), fp)
+
+    @property
+    def lut(self) -> OrderedDict[OccurrenceType, str]:
+        """Look-up table getter.
+
+        Returns:
+            the look-up table.
+        """
+        return self._lut
+
+    @property
+    def lut_key_list(self) -> List[OccurrenceType]:
+        """Look-up table key list getter.
+
+        Returns:
+            look-up table key list.
+        """
+        return self._lut_key_list
+
+    @property
+    def inverse_lut(self) -> Dict[str, OccurrenceType]:
+        """Inverse look-up table getter.
+
+        Returns:
+            inverse look-up table.
+        """
+        return self._inverse_lut
+
+    @abstractmethod
+    def compress(self, instance: Any) -> OccurrencesSequenceType:
+        """Compress an instance.
+
+        Args:
+            instance: instance to compress.
+
+        Returns:
+            the instance compressed as an occurrence sequence.
+        """
+
+    @abstractmethod
+    def decompress(
+        self, sequence: OccurrencesSequenceType, dimensions: Optional[List[int]] = None
+    ) -> Any:
+        """Decompress a sequence in an instance.
+
+        Args:
+            sequence: sequence to decompress.
+            dimensions: optional dimensions for decompression. Defaults to None.
+
+        Returns:
+            instance decompressed from an occurrence sequence.
+        """
+
+    def lut_lookup(self, value: OccurrenceType) -> str:
+        """Efficient look-up up in the table.
+
+        Args:
+            value: an occurrence value.
+
+        Returns:
+            string representation for the occurrence.
+        """
+        key_index = bisect.bisect_left(self._lut_key_list, value)
+        # ensure that it is in range
+        key_index = max(0, min(len(self._lut_key_list) - 1, key_index))
+        return self._lut[self._lut_key_list[key_index]]
+
+    def encode(self, instance: Any) -> str:
+        """Encodes an instance using the look-up table.
+
+        Args:
+            instance: instance to encode.
+
+        Returns:
+            text representation of the instance.
+        """
+        sequence = self.compress(instance)
+        text = ""
+        # NOTE: this should not be needed unless we relax typing
+        if sequence is not None:
+            text = self.default_separator.join(
+                [
+                    "".join([self.lut_lookup(value) for value in patch])
+                    for patch in sequence
+                ]
+            )
+        return text
+
+    def decode(self, text: str, dimensions: Optional[List[int,]] = None) -> Any:
+        """Decodes a text string into an instance using the inverse look-up table.
+
+        Args:
+            text: text representation of the instance
+            dimensions: dimensions of the instance to decode.
+
+        Returns:
+            decoded instance.
+        """
+        sequence = [
+            [
+                self._inverse_lut.get(character, self._inverse_lut[LAST_UNICODE_CHAR])
+                for character in word
+            ]
+            for word in text.split(self.default_separator)
+        ]
+
+        # NOTE: removes empty lists caused by the default separator.
+        # NOTE: empty lists should not be removed to preserve sequence length
+        # NOTE: empty lists should be removed otherwise decoding fails.
+        cleaned_sequence = [item for item in sequence if item]
+
+        return self.decompress(cleaned_sequence, dimensions)
+
+    def update_occurrences_from_sequence(
+        self, sequence: OccurrencesSequenceType
+    ) -> None:
+        """Update occurrences of same values using a compressed sequence.
+
+        Args:
+            sequence: compressed sequence.
+        """
+        occurrences = deepcopy(self._occurrences)
+        for patch in sequence:
+            for value in patch:
+                if value in occurrences.keys():
+                    occurrences[value] += 1
+                else:
+                    occurrences[value] = 1
+        self.occurrences = occurrences
+
+    def add_instance(self, instance: Any) -> None:
+        """Accumulates the occurrences of a given instance.
+
+        Args:
+            instance: instance to process.
+        """
+
+        sequence: OccurrencesSequenceType = self.compress(instance)
+        self.update_occurrences_from_sequence(sequence)
+
+    def add_multiple_instances(
+        self, instances: List[Any], num_workers: int = 4
+    ) -> None:
+        """Accumulates the occurrences from multiple instances.
+
+        Args:
+            instances: instances to add.
+            num_workers: number of workers to use for compression.
+        """
+        # parallelized compression of instances into sequences
+        if num_workers >= 1:
+            with mp.Pool(num_workers) as p:
+                all_sequences = p.map(self.compress, instances)
+        else:
+            all_sequences = [self.compress(instance) for instance in instances]
+
+        # (non parallel) accumulation of occurrences from all sequences
+        for sequence in all_sequences:
+            self.update_occurrences_from_sequence(sequence)
+
+    def update_occurrences(
+        self,
+        occurrences: Optional[OrderedDict[OccurrenceType, int]] = None,
+        overwrite: bool = True,
+    ) -> None:
+        """Update occurrences.
+
+        This triggers look-up tables rebuilding.
+
+        Args:
+            occurrences: optional occurrences to use for the update. Defaults to None.
+            overwrite: whether to overwrite or update existing occurrences. Defaults to True.
+        """
+        if occurrences is not None:
+            if overwrite:
+                updated_occurrences = deepcopy(occurrences)
+            else:
+                updated_occurrences = deepcopy(self._occurrences)
+                for key in occurrences.keys():
+                    updated_occurrences[key] = (
+                        updated_occurrences.get(key, 0) + occurrences[key]
+                    )
+            self.occurrences = updated_occurrences
+
+    @abstractmethod
+    def compute_quality(self, instance: Any) -> float:
+        """Measures encoding/decoding quality on an instance.
+
+        Args:
+            instance: instance to compute error
+
+        Returns:
+            quality measure.
+        """
+
+
+class UnicodeTextBWRLETransform(UnicodeDataTransform):
+    """Unicode transform for textual data using the Burrows Wheeler Transform and Run Length Encoding."""
+
+    @staticmethod
+    def slice_substrings(input: str, substring_length: int) -> List[str]:
+        """Helper function to slice a string into patches.
+
+        Args:
+            input: input string.
+            substring_length: desired substring length, enough to benefit from RLE compression.
+
+        Returns:
+            A list of substrings in the right order to recompose the input.
+        """
+
+        substrings = [
+            input[i : i + substring_length]
+            for i in range(0, len(input), substring_length)
+        ]
+
+        return substrings
+
+    @staticmethod
+    def run_length_encoder(raw_string: str) -> str:
+        """Run Length Encoding of a string.
+
+        Args:
+            raw_string: string to encode.
+
+        Returns:
+            RL-encoded string.
+        """
+        result = ""
+        count = 1
+        for i in range(len(raw_string) - 1):
+            if raw_string[i] == raw_string[i + 1]:
+                count += 1
+            else:
+                result += str(count) + raw_string[i] + "\u001f"
+                count = 1
+        result += str(count) + raw_string[i + 1]
+
+        return result
+
+    @staticmethod
+    def run_length_decoder(encoded_strings: str) -> str:
+        """Run Length Decoding of a string.
+
+        Args:
+            encoded_strings: RL-encoded string.
+
+        Returns:
+            decoded string.
+        """
+
+        decoded_string = ""
+        for run in encoded_strings.split("\u001f"):
+            try:
+                count = int(run[:-1])
+            except ValueError:
+                count = 1
+            character = run[-1]
+            decoded_string += character * count
+
+        return decoded_string
+
+    @staticmethod
+    def bwt_rle(input: str) -> str:
+        """Burrows Wheeler Transform with Run Length Encoding.
+
+        Args:
+            input: string to encode.
+
+        Returns:
+            an encoded string with BW and RLE.
+        """
+        sorted_shifts = sorted(
+            ["\u001d".join([input[i:], input[:i]]) for i in range(len(input) + 1)]
+        )
+        bwt = "".join([shift[-1] for shift in sorted_shifts])
+        bwt_rle = UnicodeTextBWRLETransform.run_length_encoder(bwt)
+        return bwt_rle
+
+    @staticmethod
+    def inverse_bwt_rle(encoded_input: str) -> str:
+        """Inverse of the Burrows Wheeler Transform with Run Length Encoding.
+
+        Args:
+            encoded_input: encoded string.
+
+        Returns:
+            a decoded string.
+        """
+        bwt_input = UnicodeTextBWRLETransform.run_length_decoder(encoded_input)
+        possibilities = [""] * len(bwt_input)
+
+        for i in range(len(bwt_input)):
+            new_possibility = [
+                "".join([character, possibility])
+                for character, possibility in zip(bwt_input, possibilities)
+            ]
+            possibilities = sorted(new_possibility)
+
+        decoded_bwt = possibilities[0][1:]
+        return decoded_bwt
+
+    def compress(self, instance: str) -> OccurrencesSequenceType:
+        """Compress an instance.
+
+        Args:
+            instance: instance to compress.
+
+        Returns:
+            the instance compressed as an occurrence sequence.
+        """
+        sequence: OccurrencesSequenceType = []
+        for string_patch in UnicodeTextBWRLETransform.slice_substrings(
+            instance, self.patch_size
+        ):
+            bwt_string_patch = UnicodeTextBWRLETransform.bwt_rle(string_patch)
+            sequence.append(
+                cast(List[OccurrenceType], bwt_string_patch.split("\u001f"))
+            )
+        return sequence
+
+    def decompress(
+        self, sequence: OccurrencesSequenceType, dimensions: Optional[List[int]] = None
+    ) -> str:
+        """Decompress a sequence in an instance.
+
+        Args:
+            sequence: sequence to decompress.
+            dimensions: optional dimensions for decompression. Defaults to None.
+
+        Returns:
+            instance decompressed from an occurrence sequence.
+        """
+        reconstructed = []
+        if dimensions is not None:
+            logger.warning(f"Dimensions {dimensions} not used in {self.__class__}")
+        for patch in sequence:
+            reconstructed_patch = "\u001f".join(cast(List[str], patch))
+            bwt_decoded_patch = UnicodeTextBWRLETransform.inverse_bwt_rle(
+                reconstructed_patch
+            )
+
+            reconstructed.append(bwt_decoded_patch)
+        return "".join(reconstructed)
+
+    def compute_quality(self, instance: str) -> float:
+        """Measures encoding/decoding quality on an instance.
+
+        Args:
+            instance: instance to compute error
+
+        Returns:
+            quality measure.
+        """
+        text = self.encode(instance.strip())
+        reconstructed_signal = self.decode(text)
+
+        quality = SequenceMatcher(None, instance.strip(), reconstructed_signal).ratio()
+        return quality
+
+
+UNICODE_TRANSFORMS: Dict[str, Type[UnicodeDataTransform]] = {
+    "text_bwrle": UnicodeTextBWRLETransform,
+    UnicodeTextBWRLETransform.__name__: UnicodeTextBWRLETransform,
+}
+
+
+UNICODE_CONFIGURATIONS: Dict[str, Type[UnicodeTransformParameters]] = {
+    "text_bwrle": UnicodeTextBWRLETransformParameters,
+    UnicodeTextBWRLETransform.__name__: UnicodeTextBWRLETransformParameters,
+}
