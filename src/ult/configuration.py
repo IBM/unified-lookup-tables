@@ -36,3 +36,13 @@ class UnicodeTextBWRLETransformParameters(UnicodeTransformParameters):
 
     compression_method: str = "Burrows Wheeler + Run Length Encoding Text Transform"
     default_separator: str = "\u001e"  # Reserved character to avoid the space
+
+class UnicodeJPEGTransformParameters(UnicodeTransformParameters):
+    """
+    Base model for Unicode Parameters for a JPEG-like image Transform
+    """
+
+    compression_method: str = "JPEG-like"
+    max_coefficients: int = 3
+    dct_precision: int = 1
+
