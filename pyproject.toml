@@ -18,7 +18,6 @@ pandas = "^2.2.3"
 pydantic = "^2.9.2"
 rdkit = "^2024.3.5"
 transformers = "^4.46.2"
-accelerate = "^0.26.0"
 
 [tool.mypy]
 check_untyped_defs = true
