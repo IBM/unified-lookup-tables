@@ -26,7 +26,6 @@ class CifarImageDataLoader(DataLoader):
         self.num_proc = num_proc
         self.do_shuffle = do_shuffle
         self.additional_kwargs = kwargs
-        
 
     def load_dataset(self) -> DatasetDict | Dataset:
         """Load Cifar dataset
@@ -51,7 +50,9 @@ class CifarImageDataLoader(DataLoader):
             dataset = dataset.shuffle()
 
         # from PIL to np
-        dataset = dataset.with_format(type="numpy", columns=["img"], output_all_columns=True)
+        dataset = dataset.with_format(
+            type="numpy", columns=["img"], output_all_columns=True
+        )
 
         # rename column
         dataset = dataset.rename_column("img", "pix_array")

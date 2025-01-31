@@ -63,14 +63,16 @@ class PASSImageDataLoader(DataLoader):
         )
 
         # Remove unused columns
-        dataset = dataset.remove_columns([
-            "creator_username",
-            "hash",
-            "gps_latitude",
-            "gps_longitude",
-            "date_taken",
-        ])
-        
+        dataset = dataset.remove_columns(
+            [
+                "creator_username",
+                "hash",
+                "gps_latitude",
+                "gps_longitude",
+                "date_taken",
+            ]
+        )
+
         # Shuffle
         if self.do_shuffle:
             dataset = dataset.shuffle()
@@ -87,7 +89,9 @@ class PASSImageDataLoader(DataLoader):
         if self.do_rescale:
 
             def transforms(examples: Dict[str, Any]) -> Dict[str, Any]:
-                examples["image"] = [image.resize(self.rescale_size) for image in examples["image"]]
+                examples["image"] = [
+                    image.resize(self.rescale_size) for image in examples["image"]
+                ]
                 return examples
 
             dataset = dataset.map(transforms, batched=True, num_proc=self.num_proc)
@@ -96,7 +100,9 @@ class PASSImageDataLoader(DataLoader):
         dataset = dataset.cast_column("image", Image(mode="RGB"))
 
         # from PIL to np
-        dataset = dataset.with_format(type="numpy", columns=["image"], output_all_columns=True)
+        dataset = dataset.with_format(
+            type="numpy", columns=["image"], output_all_columns=True
+        )
 
         # rename column
         dataset = dataset.rename_column("image", "pix_array")
