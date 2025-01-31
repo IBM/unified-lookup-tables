@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import click
 from datasets import DatasetDict, IterableDatasetDict
 from loguru import logger
 from transformers import (
@@ -11,27 +12,35 @@ from transformers import (
     Trainer,
     TrainingArguments,
 )
+from utl.transforms import UNICODE_CONFIGURATIONS, UNICODE_TRANSFORMS
 
 from ult.configuration import UnicodeTextBWRLETransformParameters
+from ult.data import DATASETLOADER_REGISTRY
 from ult.data.text.core import WikiText103Loader
-from ult.transforms import UnicodeTextBWRLETransform
 
 # Constants, modify as needed
-FIELD_NAME = "text"
+FIELD_NAME = {
+    "wikitext": "text",
+    "pass": "pix_array",
+    "cifar10": "pix_array",
+}
 NUM_WORKERS = 8
 CHECKPOINT = "HuggingFaceTB/SmolLM2-135M"
 OUTPUT_PATH = Path("ult_trainer")
 PATH_TO_LUT = OUTPUT_PATH.joinpath("LUT.json")
 
 
-def main():
+@click.command()
+@click.option("--dataset_name", type=str, default="wikitext")
+@click.option("--train_args_path", type=Path)
+def main(dataset_name: str, train_args_path: Path) -> None:
     # Load Dataset
-    dataset = WikiText103Loader().load_splits()
+    dataset = DATASETLOADER_REGISTRY[dataset_name]().load_splits()
     logger.info("Data loaded")
 
     # Inizialize ULT transformation to Unicode strings
-    unicode_configuration = UnicodeTextBWRLETransformParameters(patch_size=10)
-    unicoder = UnicodeTextBWRLETransform(unicode_configuration)
+    unicode_configuration = UNICODE_CONFIGURATIONS[dataset_name](patch_size=10)
+    unicoder = UNICODE_TRANSFORMS[dataset_name](unicode_configuration)
 
     # Compute LUT for the training data
     logger.info("Data preprocessing...")
@@ -52,11 +61,13 @@ def main():
     unicoder.save_occurrences(PATH_TO_LUT)
 
     # Apply preprocessing to the dataset
-    preprocessed_dataset = dataset.map(function=lambda example:{FIELD_NAME: unicoder.encode(example[FIELD_NAME])})
+    preprocessed_dataset = dataset.map(
+        function=lambda example: {FIELD_NAME: unicoder.encode(example[FIELD_NAME])}
+    )
 
     # Tokenize
     tokenizer = AutoTokenizer.from_pretrained(CHECKPOINT)
-    tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+    tokenizer.add_special_tokens({"pad_token": "[PAD]"})
     tokenized_dataset = preprocessed_dataset.map(
         function=tokenizer, input_columns=FIELD_NAME, fn_kwargs={"truncation": True}
     )
@@ -79,7 +90,8 @@ def main():
     )
 
     trainer.train()
+    return None
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
