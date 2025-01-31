@@ -17,6 +17,7 @@ from utl.transforms import UNICODE_CONFIGURATIONS, UNICODE_TRANSFORMS
 from ult.configuration import UnicodeTextBWRLETransformParameters
 from ult.data import DATASETLOADER_REGISTRY
 from ult.data.text.core import WikiText103Loader
+import yaml
 
 # Constants, modify as needed
 FIELD_NAME = {
@@ -78,7 +79,9 @@ def main(dataset_name: str, train_args_path: Path) -> None:
 
     # Training
     training_args = TrainingArguments(
-        output_dir=str(OUTPUT_PATH), evaluation_strategy="epoch"
+        output_dir=str(OUTPUT_PATH),
+        evaluation_strategy="epoch",
+        **yaml.safe_load(train_args_path),
     )
 
     trainer = Trainer(
