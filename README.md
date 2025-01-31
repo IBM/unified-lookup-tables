@@ -6,13 +6,36 @@ It has been demonstrated that excerpts of the training data can be obtained by p
 This repository implements Unified Lookup Tables (ULT), a data preprocessing step for building and fine tuning foundation models in a privacy preserving manner, which simultaneously enables the reuse of a trained model on new datasets without exposing any training data.
 The method relies on data compression methods as efficient modality tokenizers, and a common representation vocabulary for all datasets.
 
+![Alt text](assets/lut_creation.jpg) ![Alt text](assets/privacy_barrier.jpg)
+
+
+## Installation of dependencies
 The repository contains a python package that implements ULT, dependencies are managed with `poetry`:
 
 ```console
 poetry install
 ```
 
-## Structure
+
+## Usage for data preprocessing
+See examples of ULT data processing for text and images in `notebooks/`.
+
+
+## Usage for training
+To pretrain `SmolLM-135M` on the `wikitext` dataset using our ULT run the following script where the file `train_args.yaml` contains training arguments that can be modified as desired.
+```console
+poetry run scripts/python training_ult.py --dataset_name wikitext --train_args_path train_args.yaml
+```
+
+To pretrain on the `PASS` images dataset
+```console
+poetry run scripts/python training_ult.py --dataset_name pass --train_args_path train_args.yaml
+```
+
+To finetune the image pretraining to the `CIFAR10` dataset run the same script as above but replace loading the `SmolLM-135M` from scratch dataset for the checkpoint obtained from PASS pretraining.
+
+
+## Structure of the code
 
 - `scripts` contains the basic training pipelines leveraging the package
 - `ult.data` contains data loaders for the three datasets from the paper "Unified Lookup Tables: Privacy Preserving Foundation Models"
