@@ -509,12 +509,12 @@ class UnicodeTextBWRLETransform(UnicodeDataTransform):
         return quality
 
 
-
 class UnicodeJPEGTransform(UnicodeDataTransform):
     """Unicode transform using a JPEG-like compression method"""
 
     def __init__(
-        self, configuration: UnicodeJPEGTransformParameters = UnicodeJPEGTransformParameters()
+        self,
+        configuration: UnicodeJPEGTransformParameters = UnicodeJPEGTransformParameters(),
     ):
         """Creates a unicode data transform.
 
@@ -540,7 +540,8 @@ class UnicodeJPEGTransform(UnicodeDataTransform):
 
         if len(dimensions) == 3:
             channel_sequences = [
-                self.compress(instance[:, :, channel]) for channel in range(dimensions[2])
+                self.compress(instance[:, :, channel])
+                for channel in range(dimensions[2])
             ]
             sequence: List[Any] = []
             for patch in range(len(channel_sequences[0])):
@@ -555,7 +556,9 @@ class UnicodeJPEGTransform(UnicodeDataTransform):
 
             updated_width = self.patch_size * np.ceil(width / self.patch_size)
             updated_height = self.patch_size * np.ceil(height / self.patch_size)
-            instance = skimage.transform.resize(instance, (updated_width, updated_height))
+            instance = skimage.transform.resize(
+                instance, (updated_width, updated_height)
+            )
 
             dct_mask = np.zeros((self.patch_size, self.patch_size))
             dct_mask[0 : self.max_coefficients, 0 : self.max_coefficients] = 1
@@ -603,24 +606,34 @@ class UnicodeJPEGTransform(UnicodeDataTransform):
         instance = np.zeros(dimensions)
         updated_width = self.patch_size * np.ceil(width / self.patch_size)
         updated_height = self.patch_size * np.ceil(height / self.patch_size)
-        instance = skimage.transform.resize(instance, (updated_width, updated_height, channels))
+        instance = skimage.transform.resize(
+            instance, (updated_width, updated_height, channels)
+        )
         dct_mask = np.zeros((self.patch_size, self.patch_size))
 
         for channel in range(channels):
-            blocks = view_as_blocks(instance[:, :, channel], (self.patch_size, self.patch_size))
+            blocks = view_as_blocks(
+                instance[:, :, channel], (self.patch_size, self.patch_size)
+            )
             sequence_index = 0
             for col in range(blocks.shape[1]):
                 for row in range(blocks.shape[0]):
                     values = sequence[sequence_index][
-                        channel * self.max_coefficients * self.max_coefficients : (channel + 1)
+                        channel
+                        * self.max_coefficients
+                        * self.max_coefficients : (channel + 1)
                         * self.max_coefficients
                         * self.max_coefficients
                     ]
-                    arranged_values = np.asarray(values).reshape((
-                        self.max_coefficients,
-                        self.max_coefficients,
-                    ))
-                    dct_mask[0 : self.max_coefficients, 0 : self.max_coefficients] = arranged_values
+                    arranged_values = np.asarray(values).reshape(
+                        (
+                            self.max_coefficients,
+                            self.max_coefficients,
+                        )
+                    )
+                    dct_mask[
+                        0 : self.max_coefficients, 0 : self.max_coefficients
+                    ] = arranged_values
                     idct_block = idctn(dct_mask)
                     instance[
                         row * self.patch_size : (row + 1) * self.patch_size,
@@ -649,7 +662,11 @@ class UnicodeJPEGTransform(UnicodeDataTransform):
         reconstructed_signal = self.decode(text, list(signal.shape))
 
         mse = np.mean(
-            (signal / np.max(signal) - reconstructed_signal / np.max(reconstructed_signal)) ** 2
+            (
+                signal / np.max(signal)
+                - reconstructed_signal / np.max(reconstructed_signal)
+            )
+            ** 2
         )
         if mse == 0:  # MSE is zero means no noise is present in the signal .
             # Therefore PSNR have no importance.
@@ -658,10 +675,12 @@ class UnicodeJPEGTransform(UnicodeDataTransform):
         return psnr
 
 
-
 UNICODE_TRANSFORMS: Dict[str, Type[UnicodeDataTransform]] = {
     "text_bwrle": UnicodeTextBWRLETransform,
-     "jpeg": UnicodeJPEGTransform,
+    "wikitext": UnicodeTextBWRLETransform,
+    "jpeg": UnicodeJPEGTransform,
+    "pass": UnicodeJPEGTransform,
+    "cifar10": UnicodeJPEGTransform,
     UnicodeTextBWRLETransform.__name__: UnicodeTextBWRLETransform,
     UnicodeJPEGTransform.__name__: UnicodeJPEGTransform,
 }
@@ -669,7 +688,10 @@ UNICODE_TRANSFORMS: Dict[str, Type[UnicodeDataTransform]] = {
 
 UNICODE_CONFIGURATIONS: Dict[str, Type[UnicodeTransformParameters]] = {
     "text_bwrle": UnicodeTextBWRLETransformParameters,
-     "jpeg": UnicodeJPEGTransformParameters,
+    "wikitext": UnicodeTextBWRLETransformParameters,
+    "jpeg": UnicodeJPEGTransformParameters,
+    "pass": UnicodeJPEGTransformParameters,
+    "cifar10": UnicodeJPEGTransformParameters,
     UnicodeTextBWRLETransform.__name__: UnicodeTextBWRLETransformParameters,
     UnicodeJPEGTransform.__name__: UnicodeJPEGTransformParameters,
 }
