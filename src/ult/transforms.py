@@ -11,11 +11,15 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Type, cast
 
 import numpy as np
+import skimage
 from loguru import logger
-
+from numpy.typing import NDArray
+from scipy.fft import dctn, idctn
+from skimage.util import view_as_blocks
 
 from .configuration import (
     Occurrences,
+    UnicodeJPEGTransformParameters,
     UnicodeTextBWRLETransformParameters,
     UnicodeTransformParameters,
 )
@@ -505,13 +509,189 @@ class UnicodeTextBWRLETransform(UnicodeDataTransform):
         return quality
 
 
+class UnicodeJPEGTransform(UnicodeDataTransform):
+    """Unicode transform using a JPEG-like compression method"""
+
+    def __init__(
+        self,
+        configuration: UnicodeJPEGTransformParameters = UnicodeJPEGTransformParameters(),
+    ):
+        """Creates a unicode data transform.
+
+        Args:
+            patch_size: patch size for instance compression algorithm. Default to 16.
+            offset_value: initial unicode character offset to use for pattern occurrences.
+            compression_parameters: optional compression parameters.
+        """
+        super().__init__(configuration=configuration)
+        self.max_coefficients = configuration.max_coefficients
+        self.dct_precision = configuration.dct_precision
+
+    def compress(self, instance: NDArray[Any]) -> OccurrencesSequenceType:
+        """Compresses an instance into a list of lists of self.max_coefficients^2  DCT coefficients.
+
+        Args:
+            instance: input instance to compress.
+
+        Returns:
+            a list of lists of DCT coefficients of the compressed instance.
+        """
+        dimensions = list(instance.shape)
+
+        if len(dimensions) == 3:
+            channel_sequences = [
+                self.compress(instance[:, :, channel])
+                for channel in range(dimensions[2])
+            ]
+            sequence: List[Any] = []
+            for patch in range(len(channel_sequences[0])):
+                values: List[Any] = []
+                for channel in range(dimensions[2]):
+                    values = values + channel_sequences[channel][patch]
+                sequence.append(values)
+            return sequence
+        else:
+            width = dimensions[0]
+            height = dimensions[1]
+
+            updated_width = self.patch_size * np.ceil(width / self.patch_size)
+            updated_height = self.patch_size * np.ceil(height / self.patch_size)
+            instance = skimage.transform.resize(
+                instance, (updated_width, updated_height)
+            )
+
+            dct_mask = np.zeros((self.patch_size, self.patch_size))
+            dct_mask[0 : self.max_coefficients, 0 : self.max_coefficients] = 1
+            blocks = view_as_blocks(instance, (self.patch_size, self.patch_size))
+            sequence = []
+
+            for col in range(blocks.shape[1]):
+                for row in range(blocks.shape[0]):
+                    block = blocks[row, col, :, :]
+                    dct_block = dctn(block).round(self.dct_precision)
+                    values_to_store = dct_block[
+                        0 : self.max_coefficients, 0 : self.max_coefficients
+                    ].astype(np.float16)
+
+                    sequence.append(values_to_store.reshape((-1)).tolist())
+
+            return sequence
+
+    def decompress(
+        self, sequence: OccurrencesSequenceType, dimensions: Optional[List[int]] = None
+    ) -> NDArray[Any]:
+        """Decompresses an instance from a list of lists of self.max_coefficients^2  DCT coefficients.
+
+        Args:
+            sequence: List of list of coefficients
+            dimensions: original dimensions of the instance (H,W,C)
+
+        Returns:
+            reconstructed instance.
+        """
+        if dimensions is not None:
+            width = dimensions[0]
+            height = dimensions[1]
+            if len(dimensions) == 3:
+                channels = dimensions[2]
+            else:
+                channels = 1
+        else:
+            width = len(sequence)
+            height = self.patch_size
+            channels = 1
+
+        dimensions = [width, height, channels]
+
+        instance = np.zeros(dimensions)
+        updated_width = self.patch_size * np.ceil(width / self.patch_size)
+        updated_height = self.patch_size * np.ceil(height / self.patch_size)
+        instance = skimage.transform.resize(
+            instance, (updated_width, updated_height, channels)
+        )
+        dct_mask = np.zeros((self.patch_size, self.patch_size))
+
+        for channel in range(channels):
+            blocks = view_as_blocks(
+                instance[:, :, channel], (self.patch_size, self.patch_size)
+            )
+            sequence_index = 0
+            for col in range(blocks.shape[1]):
+                for row in range(blocks.shape[0]):
+                    values = sequence[sequence_index][
+                        channel
+                        * self.max_coefficients
+                        * self.max_coefficients : (channel + 1)
+                        * self.max_coefficients
+                        * self.max_coefficients
+                    ]
+                    arranged_values = np.asarray(values).reshape(
+                        (
+                            self.max_coefficients,
+                            self.max_coefficients,
+                        )
+                    )
+                    dct_mask[
+                        0 : self.max_coefficients, 0 : self.max_coefficients
+                    ] = arranged_values
+                    idct_block = idctn(dct_mask)
+                    instance[
+                        row * self.patch_size : (row + 1) * self.patch_size,
+                        col * self.patch_size : (col + 1) * self.patch_size,
+                        channel,
+                    ] = idct_block
+                    sequence_index += 1
+
+        instance = skimage.transform.resize(instance, (width, height, channels))
+        instance = instance - np.min(instance)
+        instance = instance / np.max(instance)
+
+        return np.squeeze(instance)
+
+    def compute_quality(self, instance: NDArray[np.float64]) -> float:
+        """Measures encoding/decoding quality on an instance.
+
+        Args:
+            instance: instance to compute error
+
+        Returns:
+            quality measure.
+        """
+        signal = np.asarray(instance)
+        text = self.encode(signal)
+        reconstructed_signal = self.decode(text, list(signal.shape))
+
+        mse = np.mean(
+            (
+                signal / np.max(signal)
+                - reconstructed_signal / np.max(reconstructed_signal)
+            )
+            ** 2
+        )
+        if mse == 0:  # MSE is zero means no noise is present in the signal .
+            # Therefore PSNR have no importance.
+            return 100.0
+        psnr = float(20 * np.log10(1 / np.sqrt(mse)))
+        return psnr
+
+
 UNICODE_TRANSFORMS: Dict[str, Type[UnicodeDataTransform]] = {
     "text_bwrle": UnicodeTextBWRLETransform,
+    "wikitext": UnicodeTextBWRLETransform,
+    "jpeg": UnicodeJPEGTransform,
+    "pass": UnicodeJPEGTransform,
+    "cifar10": UnicodeJPEGTransform,
     UnicodeTextBWRLETransform.__name__: UnicodeTextBWRLETransform,
+    UnicodeJPEGTransform.__name__: UnicodeJPEGTransform,
 }
 
 
 UNICODE_CONFIGURATIONS: Dict[str, Type[UnicodeTransformParameters]] = {
     "text_bwrle": UnicodeTextBWRLETransformParameters,
+    "wikitext": UnicodeTextBWRLETransformParameters,
+    "jpeg": UnicodeJPEGTransformParameters,
+    "pass": UnicodeJPEGTransformParameters,
+    "cifar10": UnicodeJPEGTransformParameters,
     UnicodeTextBWRLETransform.__name__: UnicodeTextBWRLETransformParameters,
+    UnicodeJPEGTransform.__name__: UnicodeJPEGTransformParameters,
 }

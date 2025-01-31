@@ -18,6 +18,8 @@ pandas = "^2.2.3"
 pydantic = "^2.9.2"
 rdkit = "^2024.3.5"
 transformers = "^4.46.2"
+scikit-image = "^0.25.1"
+opencv-python = "^4.11.0.86"
 
 [tool.mypy]
 check_untyped_defs = true
