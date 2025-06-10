@@ -22,6 +22,7 @@ from .configuration import (
     UnicodeJPEGTransformParameters,
     UnicodeTextBWRLETransformParameters,
     UnicodeTransformParameters,
+    UnicodeSeriesCompansionTransformParameters,
 )
 
 LAST_UNICODE_POINT = 2**24
@@ -674,6 +675,145 @@ class UnicodeJPEGTransform(UnicodeDataTransform):
         psnr = float(20 * np.log10(1 / np.sqrt(mse)))
         return psnr
 
+class UnicodeSeriesCompansionTransform(UnicodeDataTransform):
+    """Unicode transform for sequences of floats using companding."""
+
+    def __init__(
+        self,
+        configuration: UnicodeSeriesCompansionTransformParameters = UnicodeSeriesCompansionTransformParameters(),
+    ):
+        """Creates a unicode data transform.
+
+        Args:
+            patch_size: patch size for instance compression algorithm. Default to 16.
+            offset_value: initial unicode character offset to use for pattern occurrences.
+            compression_parameters: optional compression parameters.
+        """
+        super().__init__(configuration=configuration)
+        self.companding_max = configuration.companding_max
+        self.mu = configuration.mu
+        self.float_precision = configuration.float_precision
+
+    def float_to_int(self, float_number: float) -> int:
+        """Convert float to int with a given precision.
+
+        Args:
+            float_number: float to convert.
+
+        Returns:
+            converted number as integer.
+        """
+        scaling = (2**self.float_precision + 1) - 1
+        integer_number = int(scaling * float_number)
+        return integer_number
+
+    def int_to_float(self, integer_number: int) -> float:
+        """Convert int to float with a given precision.
+
+        Args:
+            integer_number: integer to convert.
+
+        Returns:
+            converted number as float.
+        """
+        scaling: float = (2**self.float_precision + 1) - 1
+        float_number: float = integer_number / scaling
+        return float_number
+
+    def compand(self, data: NDArray[np.float64]) -> NDArray[np.int64]:
+        """Apply companding.
+
+        Args:
+            data: data to compand.
+
+        Returns:
+            companded data.
+        """
+        data = np.array(data) / self.companding_max
+        data = np.clip(data, -1.0, 1.0)
+
+        companded_data = np.sign(data) * np.log(1 + self.mu * np.abs(data)) / np.log(1 + self.mu)
+        companded_list = [self.float_to_int(x) for x in companded_data.reshape(-1).tolist()]
+        # NOTE: companded_array = companded_data.reshape(-1).apply(self.float_to_int)
+        return cast(NDArray[np.int64], np.asarray(companded_list).squeeze())
+
+    def expand(self, data: NDArray[np.int64]) -> NDArray[np.float64]:
+        """Expand signal dynamic range using Mu law.
+
+        Args:
+            data: data to expand.
+
+        Returns:
+            expanded data.
+        """
+        data = np.asarray([self.int_to_float(int(x)) for x in data.reshape(-1).tolist()])
+        expanded_data: NDArray[Any]
+        expanded_data = np.sign(data) * (np.power((1 + self.mu), np.abs(data)) - 1) / self.mu
+        expanded_data = np.clip(expanded_data, -1, 1) * self.companding_max
+        return cast(NDArray[np.float64], expanded_data.squeeze())
+
+    def compress(self, instance: NDArray[Any]) -> OccurrencesSequenceType:
+        """Compresses a float series into a sequence by companding.
+
+        Args:
+            instance: input sequence to compress..
+
+        Returns:
+            a list of lists of coefficients of the compressed sequence.
+        """
+
+        companded = self.compand(instance)
+        new_dimension = int(self.patch_size * np.ceil(companded.size / self.patch_size))
+        companded = np.pad(companded, (0, new_dimension - len(instance)), mode="edge")
+        reshaped_companded = companded.reshape((-1, self.patch_size))
+        sequence = []
+        for patch in reshaped_companded:
+            sequence.append(list(patch))
+        return cast(OccurrencesSequenceType, sequence)
+
+    def decompress(
+        self, sequence: OccurrencesSequenceType, dimensions: Optional[List[int]] = None
+    ) -> NDArray[Any]:
+        """Decompresses an instance from a sequence by expanding.
+
+        Args:
+            sequence: list of list of coefficients.
+            dimensions: unused.
+
+        Returns:
+            reconstructed instance.
+        """
+        if dimensions is not None:
+            logger.debug(f"Dimensions {dimensions} not used")
+        reconstructed = np.zeros((len(sequence), self.patch_size), dtype=np.int64)
+        for sequence_id, patch in enumerate(sequence):
+            reconstructed[sequence_id, :] = patch
+        return np.squeeze(self.expand(reconstructed))
+
+    def compute_quality(self, instance: NDArray[np.float64]) -> float:
+        """Measures encoding/decoding quality on an instance.
+
+        Args:
+            instance: instance to compute error
+
+        Returns:
+            quality measure.
+        """
+        compressed_instance = self.compress(instance)
+        decompressed_instance = self.decompress(compressed_instance)[: len(instance)]
+        encoded_instance = self.encode(instance)
+        decoded_instance = self.decode(encoded_instance)[: len(instance)]
+        compression_error = np.mean(np.power(instance - decompressed_instance, 2))
+        encoding_error = np.mean(np.power(instance - decoded_instance, 2))
+        if (encoding_error / compression_error + 1e-12) > 1.05:
+            logger.warning("Encoding error higher than compression error")
+        mse = encoding_error
+        if mse == 0:  # MSE is zero means no noise is present in the instance .
+            # Therefore PSNR have no importance.
+            return 100
+        psnr = float(20 * np.log10(self.companding_max / np.sqrt(mse)))
+        return psnr
+    
 
 UNICODE_TRANSFORMS: Dict[str, Type[UnicodeDataTransform]] = {
     "text_bwrle": UnicodeTextBWRLETransform,
@@ -681,8 +821,10 @@ UNICODE_TRANSFORMS: Dict[str, Type[UnicodeDataTransform]] = {
     "jpeg": UnicodeJPEGTransform,
     "pass": UnicodeJPEGTransform,
     "cifar10": UnicodeJPEGTransform,
+    "compansion": UnicodeSeriesCompansionTransform,
     UnicodeTextBWRLETransform.__name__: UnicodeTextBWRLETransform,
     UnicodeJPEGTransform.__name__: UnicodeJPEGTransform,
+    UnicodeSeriesCompansionTransform.__name__: UnicodeSeriesCompansionTransform,
 }
 
 
@@ -692,6 +834,8 @@ UNICODE_CONFIGURATIONS: Dict[str, Type[UnicodeTransformParameters]] = {
     "jpeg": UnicodeJPEGTransformParameters,
     "pass": UnicodeJPEGTransformParameters,
     "cifar10": UnicodeJPEGTransformParameters,
+    "compansion": UnicodeSeriesCompansionTransformParameters,
     UnicodeTextBWRLETransform.__name__: UnicodeTextBWRLETransformParameters,
     UnicodeJPEGTransform.__name__: UnicodeJPEGTransformParameters,
+    UnicodeSeriesCompansionTransform.__name__: UnicodeSeriesCompansionTransformParameters,
 }
