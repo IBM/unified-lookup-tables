@@ -6,7 +6,7 @@ It has been demonstrated that excerpts of the training data can be obtained by p
 This repository implements Unified Lookup Tables (ULT), a data preprocessing step for building and fine tuning foundation models in a privacy preserving manner, which simultaneously enables the reuse of a trained model on new datasets without exposing any training data.
 The method relies on data compression methods as efficient modality tokenizers, and a common representation vocabulary for all datasets.
 
-![Alt text](assets/lut_creation.jpg) ![Alt text](assets/privacy_barrier.jpg)
+![Alt text](assets/lut_creation.jpg) ![Alt text](assets/ult_decoding.jpg)
 
 
 ## Installation of dependencies
