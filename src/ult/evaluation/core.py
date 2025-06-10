@@ -46,7 +46,9 @@ class Evaluator(ABC):
         """
 
     @abstractmethod
-    def compute_metrics_training(self, eval_preds: EvalPrediction) -> Dict[str, Dict[str, Any]]:
+    def compute_metrics_training(
+        self, eval_preds: EvalPrediction
+    ) -> Dict[str, Dict[str, Any]]:
         """Computes metrics during training.
 
         Args:
