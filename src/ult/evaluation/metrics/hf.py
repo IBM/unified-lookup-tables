@@ -41,5 +41,7 @@ class HuggingFaceMetricWrapper:
             the metric computation result.
         """
         return self.evaluator.compute(
-            predictions=predictions, references=groundtruth, **self.evaluator_compute_kwargs
+            predictions=predictions,
+            references=groundtruth,
+            **self.evaluator_compute_kwargs,
         )

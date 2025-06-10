@@ -53,7 +53,9 @@ class GenericEvaluator(Evaluator):
         """
         super().__init__(**kwargs)
         self.prediction_target_to_task_type = prediction_target_to_task_type
-        self.prediction_target_to_groundtruth_target = prediction_target_to_groundtruth_target
+        self.prediction_target_to_groundtruth_target = (
+            prediction_target_to_groundtruth_target
+        )
         self.groundtruth_target_to_prediction_target = {
             groundtruth_target: prediction_target
             for prediction_target, groundtruth_target in self.prediction_target_to_groundtruth_target.items()
@@ -74,9 +76,13 @@ class GenericEvaluator(Evaluator):
                         if hasattr(package_object, "metric_name")
                         else package_name
                     )
-                    self.task_type_to_metric_fns[task_type][package_name] = package_object
+                    self.task_type_to_metric_fns[task_type][
+                        package_name
+                    ] = package_object
 
-        self.processing_pipeline_operators_per_target = processing_pipeline_operators_per_target
+        self.processing_pipeline_operators_per_target = (
+            processing_pipeline_operators_per_target
+        )
 
     @staticmethod
     def import_package(package_descriptor: str) -> Tuple[Optional[str], Optional[Any]]:
@@ -91,11 +97,16 @@ class GenericEvaluator(Evaluator):
         try:
             package_module: str = ".".join(package_descriptor.split(".")[:-1])
             package_name: str = package_descriptor.split(".")[-1].split("(")[0]
-            pattern = r"(\w+)\s*=\s*([^,|)$]*)"  # pattern to find arguments like '(arg=val)'
+            pattern = (
+                r"(\w+)\s*=\s*([^,|)$]*)"  # pattern to find arguments like '(arg=val)'
+            )
             package_arguments: Dict[str, Any] = {
-                str(match[0]): eval(match[1]) for match in re.findall(pattern, package_descriptor)
+                str(match[0]): eval(match[1])
+                for match in re.findall(pattern, package_descriptor)
             }
-            package_object = getattr(importlib.import_module(package_module), package_name)
+            package_object = getattr(
+                importlib.import_module(package_module), package_name
+            )
 
             # if package_object is a callable just package_object(**package_arguments) will trigger __call__
             # and raise an error as it expects package_object(predictions, target)
@@ -132,7 +143,9 @@ class GenericEvaluator(Evaluator):
 
     def get_prediction_groundtruth_to_evaluate(
         self,
-        relevant_prediction: (List[str | npt.NDArray[np.float32]] | npt.NDArray[np.float32]),
+        relevant_prediction: (
+            List[str | npt.NDArray[np.float32]] | npt.NDArray[np.float32]
+        ),
         relevant_groundtruth: List[str | torch.Tensor] | npt.NDArray[np.float32],
     ) -> Tuple[
         torch.Tensor | List[str | float | List[float]],
@@ -167,13 +180,17 @@ class GenericEvaluator(Evaluator):
         prediction_to_evaluate: torch.Tensor | List[str | float | List[float]]
         if not predictions_contain_strings:
             prediction_to_evaluate = torch.Tensor(prediction_to_evaluate_list)
-            groundtruth_to_evaluate = torch.Tensor(relevant_groundtruth[: len(relevant_prediction)])
+            groundtruth_to_evaluate = torch.Tensor(
+                relevant_groundtruth[: len(relevant_prediction)]
+            )
         else:
             prediction_to_evaluate = prediction_to_evaluate_list
             groundtruth_to_evaluate = relevant_groundtruth[: len(relevant_prediction)]  # type: ignore
         return prediction_to_evaluate, groundtruth_to_evaluate
 
-    def compute_metrics_training(self, eval_preds: EvalPrediction) -> Dict[str, Dict[str, Any]]:
+    def compute_metrics_training(
+        self, eval_preds: EvalPrediction
+    ) -> Dict[str, Dict[str, Any]]:
         """Computes metrics during training.
 
         Much simpler as during training we don't have access to names of predictions/labels.
@@ -189,8 +206,12 @@ class GenericEvaluator(Evaluator):
         predictions = self.apply_postprocessing(eval_preds.predictions)
         # NOTE: the generic evaluator covers the case where we use the same groundtruth
         # for all targets
-        groundtruth = {target: eval_preds.label_ids for target in self.groundtruth_fields}
-        metrics = self._compute_metrics(predictions=predictions, groundtruth=groundtruth)
+        groundtruth = {
+            target: eval_preds.label_ids for target in self.groundtruth_fields
+        }
+        metrics = self._compute_metrics(
+            predictions=predictions, groundtruth=groundtruth
+        )
         flattened_metrics_dict = {
             f"{outer_key}_{inner_key}": inner_value
             for outer_key, outer_dict in metrics.items()
@@ -240,13 +261,16 @@ class GenericEvaluator(Evaluator):
                     f"predictions for {target} include None. This target will be skipped from the evaluation."
                 )
             else:
-                for metric_name, metric_fn in self.task_type_to_metric_fns[task_type].items():
+                for metric_name, metric_fn in self.task_type_to_metric_fns[
+                    task_type
+                ].items():
                     metric_key_for_target = f"{target}_{metric_name}"
-                    prediction_to_evaluate, groundtruth_to_evaluate = (
-                        self.get_prediction_groundtruth_to_evaluate(
-                            predictions[prediction_target],  # type: ignore[arg-type]
-                            groundtruth[target],
-                        )
+                    (
+                        prediction_to_evaluate,
+                        groundtruth_to_evaluate,
+                    ) = self.get_prediction_groundtruth_to_evaluate(
+                        predictions[prediction_target],  # type: ignore[arg-type]
+                        groundtruth[target],
                     )
                     try:
                         computed_metric = metric_fn(
@@ -261,19 +285,25 @@ class GenericEvaluator(Evaluator):
                         for key, value in computed_metric.items():
                             # NOTE: when possible we try to cast the value to float
                             try:
-                                metrics[task_type][f"{metric_key_for_target}_{key}"] = float(value)
+                                metrics[task_type][
+                                    f"{metric_key_for_target}_{key}"
+                                ] = float(value)
                             except (ValueError, TypeError):
                                 # NOTE: here we assume if a value has an attribute tolist
                                 # then it contains primitive types and it will be JSON serializable
                                 # once converted.
                                 if hasattr(value, "tolist"):
-                                    metrics[task_type][f"{metric_key_for_target}_{key}"] = (
-                                        value.tolist()
-                                    )
+                                    metrics[task_type][
+                                        f"{metric_key_for_target}_{key}"
+                                    ] = value.tolist()
                                 else:
-                                    metrics[task_type][f"{metric_key_for_target}_{key}"] = value
+                                    metrics[task_type][
+                                        f"{metric_key_for_target}_{key}"
+                                    ] = value
                     else:
-                        metrics[task_type][metric_key_for_target] = float(computed_metric)
+                        metrics[task_type][metric_key_for_target] = float(
+                            computed_metric
+                        )
         return metrics
 
 

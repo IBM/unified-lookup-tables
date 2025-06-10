@@ -43,7 +43,9 @@ unicode_key_transform_map = {
 def compare_feature_string_similarity(
     data_dir: Path, lut_dir: Path, result_dir: Path
 ) -> PearsonRResult:
-    data_loader = MultiOmicsDataLoader(data_dir, subsample=True, subsample_fraction=0.25)
+    data_loader = MultiOmicsDataLoader(
+        data_dir, subsample=True, subsample_fraction=0.25
+    )
 
     dataset = data_loader.load_splits()
 
