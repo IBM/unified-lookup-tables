@@ -1,0 +1,112 @@
+metadata:
+  task_name: rnaseq-series-42-p10cm1mu256
+  seed: 42
+  logging_path: /data/multiomics/ultrna-series-42-p10cm1mu256-smol17b-lr4-n1c8g8m100_pretrained/logs
+pipeline_phases:
+  load_data:
+    operator_name: MultiOmicsDataLoader
+    operator_arguments:
+      data_dir: /data/multiomics/rnaseq_augmentations/42
+      rename_test: true
+  process_data:
+  - operator_name: UnicodePreprocessor
+    operator_arguments:
+      unicode_transform: UnicodeSeriesCompansionTransform
+      field_name: array
+      target_field_name: unicode_array
+      occurrences_path: /data/experiments/multiomics/lut-rna-42-series-p10cm1mu256.json
+      unicode_configuration_parameters:
+        compression_method: Compansion
+        companding_max: 1.0
+        mu: 256
+        float_precision: 8
+        patch_size: 10
+  - operator_name: TokenizerPreprocessor
+    operator_arguments:
+      tokenizer_prompt: example["unicode_array"] + "<LABEL>" + example["target_token"]
+        + "<EOS>"
+  modeling:
+    tokenizer:
+      model_name: HuggingFaceTB/SmolLM-1.7B
+      add_special_tokens:
+        pad_token: <PAD>
+        eos_token: <EOS>
+      add_tokens:
+      - <LABEL>
+      - <C0>
+      - <C1>
+      - <C2>
+      - <C3>
+    collator:
+      collator_name: DataCollatorForLanguageModeling
+      mlm: false
+    model:
+      auto_model_type: AutoModelForCausalLM
+      model_name: HuggingFaceTB/SmolLM-1.7B
+      is_pretrained: true
+      max_position_embeddings: 40
+      problem_type: single_label_classification
+      num_labels: 4
+  trainer:
+    args:
+      output_dir: /data/multiomics/ultrna-series-42-p10cm1mu256-smol17b-lr4-n1c8g8m100_pretrained
+      num_train_epochs: 20
+      eval_strategy: steps
+      learning_rate: 0.0001
+      per_device_train_batch_size: 32
+      per_device_eval_batch_size: 32
+      logging_strategy: steps
+      logging_first_step: true
+      logging_steps: 500
+      save_total_limit: 3
+      disable_tqdm: true
+      adam_beta1: 0.9
+      adam_beta2: 0.95
+      lr_scheduler_type: cosine
+      gradient_accumulation_steps: 1
+      auto_find_batch_size: true
+      weight_decay: 0.1
+      bf16: true
+      max_grad_norm: 1.0
+      dataloader_pin_memory: true
+      dataloader_num_workers: 8
+      report_to: none
+      save_strategy: steps
+      save_steps: 500
+      metric_for_best_model: eval_loss
+      greater_is_better: false
+      load_best_model_at_end: true
+    train_args:
+      resume_from_checkpoint: false
+    initialization_args:
+      callbacks: '["transformers.EarlyStoppingCallback(early_stopping_patience = 8)"]'
+  prediction:
+    args:
+      batch_size: 1
+      generate_args:
+        max_new_tokens: 2
+        num_beams: 3
+        do_sample: true
+      decode_args:
+        skip_special_tokens: true
+    test_process_prompt:
+      operator_name: LambdaPreprocessor
+      operator_arguments:
+        function_definition_string: example
+    test_tokenize_prompt:
+      operator_name: TokenizerPreprocessor
+      operator_arguments:
+        tokenizer_prompt: example["unicode_array"] + "<LABEL>"
+        padding: true
+    evaluation:
+      operator_name: MultiOmicsEvaluator
+      operator_arguments:
+        grouped_metrics_dict: '{"classification": ["m2fm.evaluation.metrics.hf.HuggingFaceMetricWrapper(evaluator_name=\"confusion_matrix\"))",
+          "m2fm.evaluation.metrics.hf.HuggingFaceMetricWrapper(evaluator_name=\"f1\",
+          average=\"micro\"))","m2fm.evaluation.metrics.hf.HuggingFaceMetricWrapper(evaluator_name=\"hyperml/balanced_accuracy\")"]}'
+        predictions_storage_path: /data/multiomics/ultrna-series-42-p10cm1mu256-smol17b-lr4-n1c8g8m100_pretrained/real_predictions.json
+        evaluation_storage_path: /data/multiomics/ultrna-series-42-p10cm1mu256-smol17b-lr4-n1c8g8m100_pretrained/real_evaluation.json
+        prediction_target_to_task_type:
+          predicted_target_token: classification
+        prediction_target_to_groundtruth_target:
+          predicted_target_token: target
