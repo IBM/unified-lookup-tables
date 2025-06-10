@@ -46,3 +46,13 @@ class UnicodeJPEGTransformParameters(UnicodeTransformParameters):
     compression_method: str = "JPEG-like"
     max_coefficients: int = 3
     dct_precision: int = 1
+
+class UnicodeSeriesCompansionTransformParameters(UnicodeTransformParameters):
+    """
+    Base model for Unicode Parameters for a Compansion only Series Transform
+    """
+
+    compression_method: str = "Compansion"
+    companding_max: float = 2**16
+    mu: float = 255.0
+    float_precision: int = 8
