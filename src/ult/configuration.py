@@ -47,6 +47,7 @@ class UnicodeJPEGTransformParameters(UnicodeTransformParameters):
     max_coefficients: int = 3
     dct_precision: int = 1
 
+
 class UnicodeSeriesCompansionTransformParameters(UnicodeTransformParameters):
     """
     Base model for Unicode Parameters for a Compansion only Series Transform
