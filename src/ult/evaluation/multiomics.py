@@ -28,7 +28,9 @@ class MultiOmicsEvaluator(GenericEvaluator):
         GenericEvaluator: generic evaluator class.
     """
 
-    def apply_postprocessing(self, generated_model_test_output: List[str]) -> Dict[str, List[Any]]:  # type: ignore
+    def apply_postprocessing(
+        self, generated_model_test_output: List[str]
+    ) -> Dict[str, List[Any]]:  # type: ignore
         """Applies postprocessing functions to predictions on multiomics and without unicode preprocessing.
 
         Args:
@@ -98,12 +100,14 @@ class MultiOmicsEvaluator(GenericEvaluator):
         """
 
         predictions = self.apply_postprocessing(generated_model_test_output)
-        indices_to_drop = set([
-            idx
-            for _, prediction_list in predictions.items()
-            for idx, prediction in enumerate(prediction_list)
-            if prediction is None
-        ])
+        indices_to_drop = set(
+            [
+                idx
+                for _, prediction_list in predictions.items()
+                for idx, prediction in enumerate(prediction_list)
+                if prediction is None
+            ]
+        )
         indices_to_keep = list(set(range(len(groundtruth))) - indices_to_drop)
         # NOTE: filters predictions based on indices to drop
         return self._compute_metrics(

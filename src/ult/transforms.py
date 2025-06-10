@@ -620,9 +620,9 @@ class UnicodeJPEGTransform(UnicodeDataTransform):
             for col in range(blocks.shape[1]):
                 for row in range(blocks.shape[0]):
                     values = sequence[sequence_index][
-                        channel
-                        * self.max_coefficients
-                        * self.max_coefficients : (channel + 1)
+                        channel * self.max_coefficients * self.max_coefficients : (
+                            channel + 1
+                        )
                         * self.max_coefficients
                         * self.max_coefficients
                     ]
@@ -674,6 +674,7 @@ class UnicodeJPEGTransform(UnicodeDataTransform):
             return 100.0
         psnr = float(20 * np.log10(1 / np.sqrt(mse)))
         return psnr
+
 
 class UnicodeSeriesCompansionTransform(UnicodeDataTransform):
     """Unicode transform for sequences of floats using companding."""
@@ -732,8 +733,12 @@ class UnicodeSeriesCompansionTransform(UnicodeDataTransform):
         data = np.array(data) / self.companding_max
         data = np.clip(data, -1.0, 1.0)
 
-        companded_data = np.sign(data) * np.log(1 + self.mu * np.abs(data)) / np.log(1 + self.mu)
-        companded_list = [self.float_to_int(x) for x in companded_data.reshape(-1).tolist()]
+        companded_data = (
+            np.sign(data) * np.log(1 + self.mu * np.abs(data)) / np.log(1 + self.mu)
+        )
+        companded_list = [
+            self.float_to_int(x) for x in companded_data.reshape(-1).tolist()
+        ]
         # NOTE: companded_array = companded_data.reshape(-1).apply(self.float_to_int)
         return cast(NDArray[np.int64], np.asarray(companded_list).squeeze())
 
@@ -746,9 +751,13 @@ class UnicodeSeriesCompansionTransform(UnicodeDataTransform):
         Returns:
             expanded data.
         """
-        data = np.asarray([self.int_to_float(int(x)) for x in data.reshape(-1).tolist()])
+        data = np.asarray(
+            [self.int_to_float(int(x)) for x in data.reshape(-1).tolist()]
+        )
         expanded_data: NDArray[Any]
-        expanded_data = np.sign(data) * (np.power((1 + self.mu), np.abs(data)) - 1) / self.mu
+        expanded_data = (
+            np.sign(data) * (np.power((1 + self.mu), np.abs(data)) - 1) / self.mu
+        )
         expanded_data = np.clip(expanded_data, -1, 1) * self.companding_max
         return cast(NDArray[np.float64], expanded_data.squeeze())
 
@@ -813,7 +822,7 @@ class UnicodeSeriesCompansionTransform(UnicodeDataTransform):
             return 100
         psnr = float(20 * np.log10(self.companding_max / np.sqrt(mse)))
         return psnr
-    
+
 
 UNICODE_TRANSFORMS: Dict[str, Type[UnicodeDataTransform]] = {
     "text_bwrle": UnicodeTextBWRLETransform,
