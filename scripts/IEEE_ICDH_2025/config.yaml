@@ -98,15 +98,3 @@ pipeline_phases:
       operator_arguments:
         tokenizer_prompt: example["unicode_array"] + "<LABEL>"
         padding: true
-    evaluation:
-      operator_name: MultiOmicsEvaluator
-      operator_arguments:
-        grouped_metrics_dict: '{"classification": ["m2fm.evaluation.metrics.hf.HuggingFaceMetricWrapper(evaluator_name=\"confusion_matrix\"))",
-          "m2fm.evaluation.metrics.hf.HuggingFaceMetricWrapper(evaluator_name=\"f1\",
-          average=\"micro\"))","m2fm.evaluation.metrics.hf.HuggingFaceMetricWrapper(evaluator_name=\"hyperml/balanced_accuracy\")"]}'
-        predictions_storage_path: /data/multiomics/ultrna-series-42-p10cm1mu256-smol17b-lr4-n1c8g8m100_pretrained/real_predictions.json
-        evaluation_storage_path: /data/multiomics/ultrna-series-42-p10cm1mu256-smol17b-lr4-n1c8g8m100_pretrained/real_evaluation.json
-        prediction_target_to_task_type:
-          predicted_target_token: classification
-        prediction_target_to_groundtruth_target:
-          predicted_target_token: target
