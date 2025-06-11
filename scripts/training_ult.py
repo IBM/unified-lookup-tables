@@ -12,7 +12,7 @@ from transformers import (
     Trainer,
     TrainingArguments,
 )
-from utl.transforms import UNICODE_CONFIGURATIONS, UNICODE_TRANSFORMS
+from ult.transforms import UNICODE_CONFIGURATIONS, UNICODE_TRANSFORMS
 
 from ult.data import DATASETLOADER_REGISTRY
 import yaml
@@ -48,7 +48,7 @@ def main(dataset_name: str, train_args_path: Path) -> None:
         instances = list(dataset["train"][FIELD_NAME])
         unicoder.add_multiple_instances(instances=instances, num_workers=NUM_WORKERS)
     # NOTE: If the dataset is big list(dataset["train"][FIELD_NAME]) explodes OOM,
-    # betther to use lazy IterableDatasetDict
+    # better to use lazy IterableDatasetDict
     elif isinstance(dataset, IterableDatasetDict):
         batched_dataset = dataset["train"].batch(batch_size=32)
         for sample in iter(batched_dataset):
