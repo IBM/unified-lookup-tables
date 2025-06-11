@@ -1,3 +1,4 @@
+"""Script to compute correlations between sample distances in the input and feature space."""
 import re
 from pathlib import Path
 
