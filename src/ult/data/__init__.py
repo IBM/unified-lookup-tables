@@ -9,5 +9,5 @@ DATASETLOADER_REGISTRY = {
     "wikitext": WikiText103Loader,
     "pass": PASSImageDataLoader,
     "cifar10": CifarImageDataLoader,
-    "multiomics": MultiOmicsDataLoader
+    "multiomics": MultiOmicsDataLoader,
 }

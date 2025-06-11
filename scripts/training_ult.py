@@ -22,7 +22,7 @@ FIELD_NAME = {
     "wikitext": "text",
     "pass": "pix_array",
     "cifar10": "pix_array",
-    "multiomics": "array"
+    "multiomics": "array",
 }
 NUM_WORKERS = 8
 CHECKPOINT = "HuggingFaceTB/SmolLM2-135M"
