@@ -1,11 +1,5 @@
 """Data loader for saved omics data in csv format."""
 
-__copyright__ = """
-LICENSED INTERNAL CODE. PROPERTY OF IBM.
-IBM Research Licensed Internal Code
-(C) Copyright IBM Corp. 2025
-ALL RIGHTS RESERVED
-"""
 import json
 import re
 from pathlib import Path
