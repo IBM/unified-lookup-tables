@@ -6,7 +6,7 @@ pipeline_phases:
   load_data:
     operator_name: MultiOmicsDataLoader
     operator_arguments:
-      data_dir: data/42
+      data_dir: ../data/42
       rename_test: true
   process_data:
   - operator_name: UnicodePreprocessor
