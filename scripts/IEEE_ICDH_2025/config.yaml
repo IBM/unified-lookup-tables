@@ -1,12 +1,12 @@
 metadata:
   task_name: rnaseq-series-42-p10cm1mu256
   seed: 42
-  logging_path: /data/multiomics/ultrna-series-42-p10cm1mu256-smol17b-lr4-n1c8g8m100_pretrained/logs
+  logging_path: path/to/logging/folder
 pipeline_phases:
   load_data:
     operator_name: MultiOmicsDataLoader
     operator_arguments:
-      data_dir: /data/multiomics/rnaseq_augmentations/42
+      data_dir: data/42
       rename_test: true
   process_data:
   - operator_name: UnicodePreprocessor
@@ -14,7 +14,7 @@ pipeline_phases:
       unicode_transform: UnicodeSeriesCompansionTransform
       field_name: array
       target_field_name: unicode_array
-      occurrences_path: /data/experiments/multiomics/lut-rna-42-series-p10cm1mu256.json
+      occurrences_path: scripts/IEEE_ICDH_2025/lut-rna-42-series-p10cm1mu256.json
       unicode_configuration_parameters:
         compression_method: Compansion
         companding_max: 1.0
@@ -49,7 +49,7 @@ pipeline_phases:
       num_labels: 4
   trainer:
     args:
-      output_dir: /data/multiomics/ultrna-series-42-p10cm1mu256-smol17b-lr4-n1c8g8m100_pretrained
+      output_dir: path/to/output/folder
       num_train_epochs: 20
       eval_strategy: steps
       learning_rate: 0.0001
